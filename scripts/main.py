@@ -1,4 +1,4 @@
-from typing import NamedTuple, Type, Dict, Any
+from typing import NamedTuple, Type
 from modules import shared, script_callbacks
 from modules.shared import opts
 import gradio as gr
@@ -53,25 +53,7 @@ def read_config(name: str, config_type: Type, default: NamedTuple, compat_func=N
 
 
 def read_general_config():
-    # for compatibility
-    generalcfg_intterogator_names = [
-        ("use_blip_to_prefill", "BLIP"),
-        ("use_git_to_prefill", "GIT-large-COCO"),
-        ("use_booru_to_prefill", "DeepDanbooru"),
-        ("use_waifu_to_prefill", "wd-v1-4-vit-tagger"),
-    ]
-    use_interrogator_names = []
-
-    def compat_func(d: Dict[str, Any]):
-        if "use_interrogator_names" in d.keys():
-            return d
-        for cfg in generalcfg_intterogator_names:
-            if d.get(cfg[0]):
-                use_interrogator_names.append(cfg[1])
-        d["use_interrogator_names"] = use_interrogator_names
-        return d
-
-    return read_config("general", GeneralConfig, CFG_GENERAL_DEFAULT, compat_func)
+    return read_config("general", GeneralConfig, CFG_GENERAL_DEFAULT)
 
 
 def read_filter_config():
@@ -169,8 +151,6 @@ def on_ui_tabs():
     cfg_edit_selected = read_edit_selected_config()
     cfg_file_move_delete = read_move_delete_config()
 
-    ui.dte_instance.load_interrogators()
-
     with gr.Blocks(analytics_enabled=False) as dataset_tag_editor_interface:
 
         gr.HTML(
@@ -218,13 +198,6 @@ def on_ui_tabs():
             ui.load_dataset.cb_load_recursive,
             ui.load_dataset.cb_load_caption_from_filename,
             ui.load_dataset.cb_replace_new_line_with_comma,
-            ui.load_dataset.rb_use_interrogator,
-            ui.load_dataset.dd_intterogator_names,
-            ui.load_dataset.cb_use_custom_threshold_booru,
-            ui.load_dataset.sl_custom_threshold_booru,
-            ui.load_dataset.cb_use_custom_threshold_waifu,
-            ui.load_dataset.sl_custom_threshold_waifu,
-            ui.load_dataset.sl_custom_threshold_z3d,
             ui.toprow.cb_save_kohya_metadata,
             ui.toprow.tb_metadata_output,
             ui.toprow.tb_metadata_input,
@@ -259,13 +232,11 @@ def on_ui_tabs():
             ui.batch_edit_captions.tag_select_ui_remove.rb_sort_order,
             ui.batch_edit_captions.rb_sort_by,
             ui.batch_edit_captions.rb_sort_order,
-            ui.batch_edit_captions.nb_token_count,
         ]
         components_edit_selected = [
             ui.edit_caption_of_selected_image.cb_copy_caption_automatically,
             ui.edit_caption_of_selected_image.cb_sort_caption_on_save,
             ui.edit_caption_of_selected_image.cb_ask_save_when_caption_changed,
-            ui.edit_caption_of_selected_image.dd_intterogator_names_si,
             ui.edit_caption_of_selected_image.rb_sort_by,
             ui.edit_caption_of_selected_image.rb_sort_order,
         ]
@@ -440,58 +411,6 @@ def on_ui_settings():
         "dataset_editor_use_temp_files",
         shared.OptionInfo(
             False, "Force image gallery to use temporary files", section=section
-        ),
-    )
-    shared.opts.add_option(
-        "dataset_editor_use_raw_clip_token",
-        shared.OptionInfo(
-            True,
-            "Use raw CLIP token to calculate token count (without emphasis or embeddings)",
-            section=section,
-        ),
-    )
-    shared.opts.add_option(
-        "dataset_editor_use_rating",
-        shared.OptionInfo(
-            False,
-            "Use rating tags",
-            section=section,
-        ),
-    )
-
-    shared.opts.add_option(
-        "dataset_editor_num_cpu_workers",
-        shared.OptionInfo(
-            -1,
-            "Number of CPU workers when preprocessing images (set -1 to auto)",
-            section=section,
-        ),
-    )
-
-    shared.opts.add_option(
-        "dataset_editor_batch_size_vit",
-        shared.OptionInfo(
-            4,
-            "Inference batch size for ViT taggers",
-            section=section,
-        ),
-    )
-
-    shared.opts.add_option(
-        "dataset_editor_batch_size_convnext",
-        shared.OptionInfo(
-            4,
-            "Inference batch size for ConvNeXt taggers",
-            section=section,
-        ),
-    )
-
-    shared.opts.add_option(
-        "dataset_editor_batch_size_swinv2",
-        shared.OptionInfo(
-            4,
-            "Inference batch size for SwinTransformerV2 taggers",
-            section=section,
         ),
     )
 

@@ -68,11 +68,7 @@ class BatchEditCaptionsUI(UIBase):
                     self.rb_sort_by = gr.Radio(choices=[e.value for e in SortBy], value=cfg_batch_edit.batch_sort_by, interactive=True, label='Sort by')
                     self.rb_sort_order = gr.Radio(choices=[e.value for e in SortOrder], value=cfg_batch_edit.batch_sort_order, interactive=True, label='Sort Order')
                 self.btn_sort_selected = gr.Button(value='Sort tags', variant='primary')
-            with gr.Column(variant='panel'):
-                gr.HTML('Truncate tags by token count.')
-                self.nb_token_count = gr.Number(value=cfg_batch_edit.token_count, precision=0)
-                self.btn_truncate_by_token = gr.Button(value='Truncate tags by token count', variant='primary')
-    
+
     def set_callbacks(self, o_update_filter_and_gallery:List[gr.components.Component], load_dataset:LoadDatasetUI, filter_by_tags:FilterByTagsUI, get_filters:Callable[[], List[dte_module.filters.Filter]], update_filter_and_gallery:Callable[[], List]):
         load_dataset.btn_load_datasets.click(
             fn=lambda:['', ''],
@@ -175,18 +171,7 @@ class BatchEditCaptionsUI(UIBase):
             inputs=self.cb_show_only_tags_selected
         )
 
-        def truncate_by_token_count(token_count:int):
-            token_count = max(int(token_count), 0)
-            dte_instance.truncate_filtered_tags_by_token_count(get_filters(), token_count)
-            return update_filter_and_gallery()
 
-        self.btn_truncate_by_token.click(
-            fn=truncate_by_token_count,
-            inputs=self.nb_token_count,
-            outputs=o_update_filter_and_gallery
-        )
-
-        
     def get_common_tags(self, get_filters:Callable[[], List[dte_module.filters.Filter]], filter_by_tags:FilterByTagsUI):
         if self.show_only_selected_tags:
             tags = ', '.join([t for t in dte_instance.get_common_tags(filters=get_filters()) if t in filter_by_tags.tag_filter_ui.filter.tags])

@@ -2,13 +2,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, List, Callable
 import gradio as gr
 
-from modules import shared
-from modules.call_queue import wrap_queued_call
 from scripts.dte_instance import dte_module
 
 from .ui_common import *
 from .uibase import UIBase
-from scripts.tokenizer import clip_tokenizer
 
 if TYPE_CHECKING:
     from .ui_classes import *
@@ -27,23 +24,11 @@ class EditCaptionOfSelectedImageUI(UIBase):
             self.btn_hidden_save_caption = gr.Button(elem_id="dataset_tag_editor_btn_hidden_save_caption")
         with gr.Tab(label='Read Caption from Selected Image'):
             self.tb_caption = gr.Textbox(label='Caption of Selected Image', interactive=False, lines=6, elem_id='dte_caption')
-            self.token_counter_caption = gr.HTML(value='<span>0/75</span>', elem_id='dte_caption_counter', elem_classes=["token-counter-dte"])
             with gr.Row():
                 self.btn_copy_caption = gr.Button(value='Copy and Overwrite')
                 self.btn_prepend_caption = gr.Button(value='Prepend')
                 self.btn_append_caption = gr.Button(value='Append')
             
-        with gr.Tab(label='Interrogate Selected Image'):
-            with gr.Row():
-                self.dd_intterogator_names_si = gr.Dropdown(label = 'Interrogator', choices=dte_instance.INTERROGATOR_NAMES, value=cfg_edit_selected.use_interrogator_name, interactive=True, multiselect=False)
-                self.btn_interrogate_si = gr.Button(value='Interrogate')
-            with gr.Column():
-                self.tb_interrogate = gr.Textbox(label='Interrogate Result', interactive=True, lines=6, elem_id='dte_interrogate')
-                self.token_counter_interrogate = gr.HTML(value='<span></span>', elem_id='dte_interrogate_counter')
-            with gr.Row():
-                self.btn_copy_interrogate = gr.Button(value='Copy and Overwrite')
-                self.btn_prepend_interrogate = gr.Button(value='Prepend')
-                self.btn_append_interrogate = gr.Button(value='Append')
         with gr.Column():
             self.cb_copy_caption_automatically = gr.Checkbox(value=cfg_edit_selected.auto_copy, label='Copy caption from selected images automatically')
             self.cb_sort_caption_on_save = gr.Checkbox(value=cfg_edit_selected.sort_on_save, label='Sort caption on save')
@@ -53,7 +38,6 @@ class EditCaptionOfSelectedImageUI(UIBase):
             self.cb_ask_save_when_caption_changed = gr.Checkbox(value=cfg_edit_selected.warn_change_not_saved, label='Warn if changes in caption is not saved')
         with gr.Column():
             self.tb_edit_caption = gr.Textbox(label='Edit Caption', interactive=True, lines=6, elem_id= 'dte_edit_caption')
-            self.token_counter_edit_caption = gr.HTML(value='<span>0/75</span>', elem_id='dte_edit_caption_counter', elem_classes=["token-counter-dte"])
         self.btn_apply_changes_selected_image = gr.Button(value='Apply changes to selected image', variant='primary')
         self.btn_apply_changes_all_images = gr.Button(value='Apply changes to ALL displayed images', variant='primary')
 
@@ -133,38 +117,6 @@ class EditCaptionOfSelectedImageUI(UIBase):
             outputs=[self.tb_edit_caption]
         )
 
-        def interrogate_selected_image(interrogator_name: str, use_threshold_booru: bool, threshold_booru: float, use_threshold_waifu: bool, threshold_waifu: float, threshold_z3d: float):
-            
-            if not interrogator_name:
-                return ''
-            threshold_booru = threshold_booru if use_threshold_booru else shared.opts.interrogate_deepbooru_score_threshold
-            threshold_waifu = threshold_waifu if use_threshold_waifu else -1
-            return dte_instance.interrogate_image(dataset_gallery.selected_path, interrogator_name, threshold_booru, threshold_waifu, threshold_z3d)
-
-        self.btn_interrogate_si.click(
-            fn=interrogate_selected_image,
-            inputs=[self.dd_intterogator_names_si, load_dataset.cb_use_custom_threshold_booru, load_dataset.sl_custom_threshold_booru, load_dataset.cb_use_custom_threshold_waifu, load_dataset.sl_custom_threshold_waifu, load_dataset.sl_custom_threshold_z3d],
-            outputs=[self.tb_interrogate]
-        )
-
-        self.btn_copy_interrogate.click(
-            fn=lambda a:a,
-            inputs=[self.tb_interrogate],
-            outputs=[self.tb_edit_caption]
-        )
-
-        self.btn_append_interrogate.click(
-            fn=lambda a, b : b + (', ' if a and b else '') + a,
-            inputs=[self.tb_interrogate, self.tb_edit_caption],
-            outputs=[self.tb_edit_caption]
-        )
-        
-        self.btn_prepend_interrogate.click(
-            fn=lambda a, b : a + (', ' if a and b else '') + b,
-            inputs=[self.tb_interrogate, self.tb_edit_caption],
-            outputs=[self.tb_edit_caption]
-        )
-
         def change_in_caption():
             self.change_is_saved = False
 
@@ -213,28 +165,3 @@ class EditCaptionOfSelectedImageUI(UIBase):
             inputs=self.cb_sort_caption_on_save,
             outputs=self.sort_settings
         )
-
-        def update_token_counter(text:str):
-            _, token_count = clip_tokenizer.tokenize(text, shared.opts.dataset_editor_use_raw_clip_token)
-            max_length = clip_tokenizer.get_target_token_count(token_count)
-            return f"<span class='gr-box gr-text-input'>{token_count}/{max_length}</span>"
-
-        update_caption_token_counter_args = {
-            'fn' : wrap_queued_call(update_token_counter),
-            'inputs' : [self.tb_caption],
-            'outputs' : [self.token_counter_caption]
-        }
-        update_edit_caption_token_counter_args = {
-            'fn' : wrap_queued_call(update_token_counter),
-            'inputs' : [self.tb_edit_caption],
-            'outputs' : [self.token_counter_edit_caption]
-        }
-        update_interrogate_token_counter_args = {
-            'fn' : wrap_queued_call(update_token_counter),
-            'inputs' : [self.tb_interrogate],
-            'outputs' : [self.token_counter_interrogate]
-        }
-
-        self.tb_caption.change(**update_caption_token_counter_args)
-        self.tb_edit_caption.change(**update_edit_caption_token_counter_args)
-        self.tb_interrogate.change(**update_interrogate_token_counter_args)

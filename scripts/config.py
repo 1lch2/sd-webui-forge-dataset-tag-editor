@@ -19,13 +19,6 @@ GeneralConfig = namedtuple(
         "load_recursive",
         "load_caption_from_filename",
         "replace_new_line",
-        "use_interrogator",
-        "use_interrogator_names",
-        "use_custom_threshold_booru",
-        "custom_threshold_booru",
-        "use_custom_threshold_waifu",
-        "custom_threshold_waifu",
-        "custom_threshold_z3d",
         "save_kohya_metadata",
         "meta_output_path",
         "meta_input_path",
@@ -52,7 +45,6 @@ BatchEditConfig = namedtuple(
         "sort_order",
         "batch_sort_by",
         "batch_sort_order",
-        "token_count",
     ],
 )
 EditSelectedConfig = namedtuple(
@@ -61,7 +53,6 @@ EditSelectedConfig = namedtuple(
         "auto_copy",
         "sort_on_save",
         "warn_change_not_saved",
-        "use_interrogator_name",
         "sort_by",
         "sort_order",
     ],
@@ -77,13 +68,6 @@ CFG_GENERAL_DEFAULT = GeneralConfig(
     False,
     True,
     False,
-    "No",
-    [],
-    False,
-    0.7,
-    False,
-    0.35,
-    0.35,
     False,
     "",
     "",
@@ -109,10 +93,9 @@ CFG_BATCH_EDIT_DEFAULT = BatchEditConfig(
     SortOrder.ASC.value,
     SortBy.ALPHA.value,
     SortOrder.ASC.value,
-    75,
 )
 CFG_EDIT_SELECTED_DEFAULT = EditSelectedConfig(
-    False, False, False, "", SortBy.ALPHA.value, SortOrder.ASC.value
+    False, False, False, SortBy.ALPHA.value, SortOrder.ASC.value
 )
 CFG_MOVE_DELETE_DEFAULT = MoveDeleteConfig("Selected One", [], ".txt", "")
 

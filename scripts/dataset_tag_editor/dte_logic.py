@@ -1,125 +1,51 @@
 from pathlib import Path
-import re, sys
+import re
 from typing import List, Set, Optional
 from enum import Enum
 
 from PIL import ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 from PIL import Image
-from tqdm import tqdm
 
 from modules import shared
-from modules.textual_inversion.dataset import re_numbers_at_start
+
+# Defined here because Forge Classic no longer ships modules/textual_inversion/dataset.py
+# (origin: AUTOMATIC1111's modules/textual_inversion/dataset.py)
+re_numbers_at_start = re.compile(r"^[-\d]+\s*")
 
 from scripts.singleton import Singleton
 
-from scripts import logger, utilities
-from scripts.paths import paths
+from scripts import logger
 
 from . import (
     filters,
     dataset as ds,
     kohya_finetune_metadata as kohya_metadata,
-    taggers_builtin
 )
-from .custom_scripts import CustomScripts
-from .interrogator_names import BLIP2_CAPTIONING_NAMES, WD_TAGGERS, WD_TAGGERS_TIMM
-from scripts.tokenizer import clip_tokenizer
-from scripts.tagger import Tagger
 
 re_tags = re.compile(r"^([\s\S]+?)( \[\d+\])?$")
 re_newlines = re.compile(r"[\r\n]+")
-
-def get_square_rgb(data:Image.Image):
-    data_rgb = utilities.get_rgb_image(data)
-    size = max(data.size)
-    return utilities.resize_and_fill(data_rgb, (size, size))
 
 class DatasetTagEditor(Singleton):
     class SortBy(Enum):
         ALPHA = "Alphabetical Order"
         FREQ = "Frequency"
         LEN = "Length"
-        TOKEN = "Token Length"
 
     class SortOrder(Enum):
         ASC = "Ascending"
         DESC = "Descending"
 
-    class InterrogateMethod(Enum):
-        NONE = 0
-        PREFILL = 1
-        OVERWRITE = 2
-        PREPEND = 3
-        APPEND = 4
-
     def __init__(self):
-        # from modules.textual_inversion.dataset
-        self.re_word = (
-            re.compile(shared.opts.dataset_filename_word_regex)
-            if len(shared.opts.dataset_filename_word_regex) > 0
-            else None
-        )
+        # from modules/textual_inversion/dataset.py
+        # These training options are absent in Forge Classic; default to "" (no regex).
+        word_regex = getattr(shared.opts, "dataset_filename_word_regex", "")
+        self.re_word = re.compile(word_regex) if len(word_regex) > 0 else None
         self.dataset = ds.Dataset()
         self.img_idx = dict()
         self.tag_counts = {}
         self.dataset_dir = ""
         self.images = {}
-        self.tag_tokens = {}
-        self.raw_clip_token_used = None
-    
-    def load_interrogators(self):
-        custom_tagger_scripts = CustomScripts(paths.userscript_path / "taggers")
-        custom_taggers:list[Tagger] = custom_tagger_scripts.load_derived_classes(Tagger)
-        logger.write(f"Custom taggers loaded: {[tagger().name() for tagger in custom_taggers]}")
-
-        def read_wd_batchsize(name:str):
-            if "vit" in name:
-                return shared.opts.dataset_editor_batch_size_vit
-            elif "convnext" in name:
-                return shared.opts.dataset_editor_batch_size_convnext
-            elif "swinv2" in name:
-                return shared.opts.dataset_editor_batch_size_swinv2
-        
-        self.INTERROGATORS = (
-            [taggers_builtin.BLIP()]
-            + [taggers_builtin.BLIP2(name) for name in BLIP2_CAPTIONING_NAMES]
-            + [taggers_builtin.GITLarge()]
-            + [taggers_builtin.DeepDanbooru()]
-            + [
-                taggers_builtin.WaifuDiffusion(name, threshold)
-                for name, threshold in WD_TAGGERS.items()
-            ]
-            + [
-                taggers_builtin.WaifuDiffusionTimm(name, threshold, int(read_wd_batchsize(name)))
-                for name, threshold in WD_TAGGERS_TIMM.items()
-            ]
-            + [taggers_builtin.Z3D_E621()]
-            + [cls_tagger() for cls_tagger in custom_taggers]
-        )
-        self.INTERROGATOR_NAMES = [it.name() for it in self.INTERROGATORS]
-
-    def interrogate_image(self, path: str, interrogator_name: str, threshold_booru, threshold_wd, threshold_z3d):
-        try:
-            img = get_square_rgb(Image.open(path))
-        except:
-            return ""
-        else:
-            for it in self.INTERROGATORS:
-                if it.name() == interrogator_name:
-                    if isinstance(it, taggers_builtin.DeepDanbooru):
-                        with it as tg:
-                            res = tg.predict(img, threshold_booru)
-                    elif isinstance(it, taggers_builtin.WaifuDiffusion) or isinstance(it, taggers_builtin.WaifuDiffusionTimm):
-                        with it as tg:
-                            res = tg.predict(img, threshold_wd)
-                    elif isinstance(it, taggers_builtin.Z3D_E621):
-                        with it as tg:
-                            res = tg.predict(img, threshold_z3d)
-                    else:
-                        with it as cap:
-                            res = cap.predict(img)
-            return ", ".join(res)
 
     def get_tag_list(self):
         if len(self.tag_counts) == 0:
@@ -147,12 +73,6 @@ class DatasetTagEditor(Singleton):
                 ]
             elif sort_by == self.SortBy.LEN:
                 return [f"{tag} [{len(tag)}]" for tag in tags if tag]
-            elif sort_by == self.SortBy.TOKEN:
-                return [
-                    f"{tag} [{self.tag_tokens.get(tag, (0, 0))[1]}]"
-                    for tag in tags
-                    if tag
-                ]
             else:
                 return [f"{tag}" for tag in tags if tag]
         else:
@@ -192,19 +112,6 @@ class DatasetTagEditor(Singleton):
                 return sorted(tags, key=lambda t: (len(t), t), reverse=False)
             elif sort_order == self.SortOrder.DESC:
                 return sorted(tags, key=lambda t: (-len(t), t), reverse=False)
-        elif sort_by == self.SortBy.TOKEN:
-            if sort_order == self.SortOrder.ASC:
-                return sorted(
-                    tags,
-                    key=lambda t: (self.tag_tokens.get(t, (0, 0))[1], t),
-                    reverse=False,
-                )
-            elif sort_order == self.SortOrder.DESC:
-                return sorted(
-                    tags,
-                    key=lambda t: (-self.tag_tokens.get(t, (0, 0))[1], t),
-                    reverse=False,
-                )
         return list(tags)
 
     def get_filtered_imgpaths(self, filters: list[filters.Filter] = []):
@@ -483,24 +390,6 @@ class DatasetTagEditor(Singleton):
             f'Tags are sorted by {sort_args.get("sort_by").value} ({sort_args.get("sort_order").value})'
         )
 
-    def truncate_filtered_tags_by_token_count(
-        self, filters: list[filters.Filter] = [], max_token_count: int = 75
-    ):
-        img_paths = self.get_filtered_imgpaths(filters)
-        for path in img_paths:
-            tags = self.dataset.get_data_tags(path)
-            res = []
-            for tag in tags:
-                _, token_count = clip_tokenizer.tokenize(", ".join(res + [tag]))
-                if token_count <= max_token_count:
-                    res.append(tag)
-                else:
-                    break
-            self.set_tags_by_image_path(path, res)
-
-        self.construct_tag_infos()
-        logger.write(f"Tags are truncated into token count <= {max_token_count}")
-
     def get_img_path_list(self):
         return [k for k in self.dataset.datas.keys() if k]
 
@@ -657,13 +546,8 @@ class DatasetTagEditor(Singleton):
         recursive: bool,
         load_caption_from_filename: bool,
         replace_new_line: bool,
-        interrogate_method: InterrogateMethod,
-        interrogator_names: list[str],
-        threshold_booru: float,
-        threshold_waifu: float,
-        threshold_z3d: float,
         use_temp_dir: bool,
-        kohya_json_path: Optional[str], 
+        kohya_json_path: Optional[str],
         max_res:float
     ):
         self.clear()
@@ -724,18 +608,17 @@ class DatasetTagEditor(Singleton):
                 img_path = Path(abs_path)
                 text_path = img_path.with_suffix(caption_ext)
                 caption_text = ""
-                if interrogate_method != self.InterrogateMethod.OVERWRITE:
-                    # from modules/textual_inversion/dataset.py, modified
-                    if text_path.is_file():
-                        caption_text = text_path.read_text("utf8")
-                    elif load_caption_from_filename:
-                        caption_text = img_path.stem
-                        caption_text = re.sub(re_numbers_at_start, "", caption_text)
-                        if self.re_word:
-                            tokens = self.re_word.findall(caption_text)
-                            caption_text = (
-                                shared.opts.dataset_filename_join_string or ""
-                            ).join(tokens)
+                # from modules/textual_inversion/dataset.py, modified
+                if text_path.is_file():
+                    caption_text = text_path.read_text("utf8")
+                elif load_caption_from_filename:
+                    caption_text = img_path.stem
+                    caption_text = re.sub(re_numbers_at_start, "", caption_text)
+                    if self.re_word:
+                        tokens = self.re_word.findall(caption_text)
+                        caption_text = (
+                            getattr(shared.opts, "dataset_filename_join_string", "") or ""
+                        ).join(tokens)
 
                 if replace_new_line:
                     caption_text = re_newlines.sub(",", caption_text)
@@ -745,19 +628,6 @@ class DatasetTagEditor(Singleton):
                 taglists.append(caption_tags)
 
             return taglists
-        
-        tagger_thresholds:list[tuple[Tagger, float]] = []
-        if interrogate_method != self.InterrogateMethod.NONE:
-            for it in self.INTERROGATORS:
-                if it.name() in interrogator_names:
-                    if isinstance(it, taggers_builtin.DeepDanbooru):
-                        tagger_thresholds.append((it, threshold_booru))
-                    elif isinstance(it, taggers_builtin.WaifuDiffusion) or isinstance(it, taggers_builtin.WaifuDiffusionTimm):
-                        tagger_thresholds.append((it, threshold_waifu))
-                    elif isinstance(it, taggers_builtin.Z3D_E621):
-                        tagger_thresholds.append((it, threshold_z3d))
-                    else:
-                        tagger_thresholds.append((it, None))
 
         if kohya_json_path:
             imgpaths, images_raw, taglists = kohya_metadata.read(
@@ -766,65 +636,10 @@ class DatasetTagEditor(Singleton):
         else:
             imgpaths, images_raw = load_images(filepaths)
             taglists = load_captions(imgpaths)
-        
+
         self.images = load_thumbnails(images_raw)
-        
-        interrogate_tags = {img_path : [] for img_path in imgpaths}
-        
-        img_to_interrogate = [
-        img_path for i, img_path in enumerate(imgpaths) 
-            if (not taglists[i] or interrogate_method != self.InterrogateMethod.PREFILL)
-        ]
 
-        if interrogate_method != self.InterrogateMethod.NONE and img_to_interrogate:
-            logger.write("Preprocess images...")
-            max_workers = shared.opts.dataset_editor_num_cpu_workers
-            if max_workers < 0:
-                import os
-                max_workers = os.cpu_count() + 1
-            
-            def gen_data(paths:list[str], images:dict[str, Image.Image]):
-                for img_path in paths:
-                    yield images[img_path]
-            
-            from concurrent.futures import ThreadPoolExecutor
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                result = list(executor.map(get_square_rgb, gen_data(img_to_interrogate, images_raw)))
-            logger.write("Preprocess completed")
-            
-            for tg, th in tqdm(tagger_thresholds):
-                use_pipe = True
-                tg.start()
-
-                try:
-                    tg.predict_pipe(None)
-                except NotImplementedError:
-                    use_pipe = False
-                except Exception as e:
-                    tb = sys.exc_info()[2]
-                    logger.error(e.with_traceback(tb))
-                    continue
-                try:
-                    if use_pipe:
-                        for img_path, tags in tqdm(zip(img_to_interrogate, tg.predict_pipe(result, th)), desc=tg.name(), total=len(img_to_interrogate)):
-                            interrogate_tags[img_path] += tags
-                    else:
-                        for img_path, data in tqdm(zip(img_to_interrogate, result), desc=tg.name(), total=len(img_to_interrogate)):
-                            interrogate_tags[img_path] += tg.predict(data, th)
-                except Exception as e:
-                    tb = sys.exc_info()[2]
-                    logger.error(e.with_traceback(tb))
-                finally:
-                    tg.stop()
-        
         for img_path, tags in zip(imgpaths, taglists):
-            if (interrogate_method == self.InterrogateMethod.PREFILL and not tags) or (interrogate_method == self.InterrogateMethod.OVERWRITE):
-                tags = interrogate_tags[img_path]
-            elif interrogate_method == self.InterrogateMethod.PREPEND:
-                tags = interrogate_tags[img_path] + tags
-            elif interrogate_method != self.InterrogateMethod.PREFILL:
-                tags = tags + interrogate_tags[img_path]
-
             self.set_tags_by_image_path(img_path, tags)
 
         for i, p in enumerate(sorted(self.dataset.datas.keys())):
@@ -905,7 +720,6 @@ class DatasetTagEditor(Singleton):
     def clear(self):
         self.dataset.clear()
         self.tag_counts.clear()
-        self.tag_tokens.clear()
         self.img_idx.clear()
         self.dataset_dir = ""
         for img in self.images:
@@ -915,22 +729,9 @@ class DatasetTagEditor(Singleton):
 
     def construct_tag_infos(self):
         self.tag_counts = {}
-        update_token_count = (
-            self.raw_clip_token_used is None
-            or self.raw_clip_token_used != shared.opts.dataset_editor_use_raw_clip_token
-        )
-
-        if update_token_count:
-            self.tag_tokens.clear()
-
         for data in self.dataset.datas.values():
             for tag in data.tags:
                 if tag in self.tag_counts.keys():
                     self.tag_counts[tag] += 1
                 else:
                     self.tag_counts[tag] = 1
-                if tag not in self.tag_tokens:
-                    self.tag_tokens[tag] = clip_tokenizer.tokenize(
-                        tag, shared.opts.dataset_editor_use_raw_clip_token
-                    )
-        self.raw_clip_token_used = shared.opts.dataset_editor_use_raw_clip_token

@@ -50,63 +50,6 @@ class LoadDatasetUI(UIBase):
                             value=cfg_general.replace_new_line,
                             label="Replace new-line character with comma",
                         )
-                    with gr.Column():
-                        self.rb_use_interrogator = gr.Radio(
-                            choices=[
-                                "No",
-                                "If Empty",
-                                "Overwrite",
-                                "Prepend",
-                                "Append",
-                            ],
-                            value=cfg_general.use_interrogator,
-                            label="Use Interrogator Caption",
-                        )
-                        self.dd_intterogator_names = gr.Dropdown(
-                            label="Interrogators",
-                            choices=dte_instance.INTERROGATOR_NAMES,
-                            value=cfg_general.use_interrogator_names,
-                            interactive=True,
-                            multiselect=True,
-                        )
-            with gr.Accordion(label="Interrogator Settings", open=False):
-                with gr.Row():
-                    self.cb_use_custom_threshold_booru = gr.Checkbox(
-                        value=cfg_general.use_custom_threshold_booru,
-                        label="Use Custom Threshold (Booru)",
-                        interactive=True,
-                    )
-                    self.sl_custom_threshold_booru = gr.Slider(
-                        minimum=0,
-                        maximum=1,
-                        value=cfg_general.custom_threshold_booru,
-                        step=0.01,
-                        interactive=True,
-                        label="Booru Score Threshold",
-                    )
-                with gr.Row():
-                    self.sl_custom_threshold_z3d = gr.Slider(
-                        minimum=0,
-                        maximum=1,
-                        value=cfg_general.custom_threshold_z3d,
-                        step=0.01,
-                        interactive=True,
-                        label="Z3D-E621 Score Threshold",
-                    )
-                with gr.Row():
-                    self.cb_use_custom_threshold_waifu = gr.Checkbox(
-                        value=cfg_general.use_custom_threshold_waifu,
-                        label="Use Custom Threshold (WDv1.4 Tagger)",
-                        interactive=True,
-                    )
-                    self.sl_custom_threshold_waifu = gr.Slider(
-                        minimum=0,
-                        maximum=1,
-                        value=cfg_general.custom_threshold_waifu,
-                        step=0.01,
-                        interactive=True,
-                        label="WDv1.4 Tagger Score Threshold",
-                    )
 
     def set_callbacks(
         self,
@@ -124,36 +67,9 @@ class LoadDatasetUI(UIBase):
             recursive: bool,
             load_caption_from_filename: bool,
             replace_new_line: bool,
-            use_interrogator: str,
-            use_interrogator_names,  #: List[str], : to avoid error on gradio v3.23.0
-            use_custom_threshold_booru: bool,
-            custom_threshold_booru: float,
-            use_custom_threshold_waifu: bool,
-            custom_threshold_waifu: float,
-            custom_threshold_z3d: float,
             use_kohya_metadata: bool,
             kohya_json_path: str,
         ):
-
-            interrogate_method = dte_instance.InterrogateMethod.NONE
-            if use_interrogator == "If Empty":
-                interrogate_method = dte_instance.InterrogateMethod.PREFILL
-            elif use_interrogator == "Overwrite":
-                interrogate_method = dte_instance.InterrogateMethod.OVERWRITE
-            elif use_interrogator == "Prepend":
-                interrogate_method = dte_instance.InterrogateMethod.PREPEND
-            elif use_interrogator == "Append":
-                interrogate_method = dte_instance.InterrogateMethod.APPEND
-
-            threshold_booru = (
-                custom_threshold_booru
-                if use_custom_threshold_booru
-                else opts.interrogate_deepbooru_score_threshold
-            )
-            threshold_waifu = (
-                custom_threshold_waifu if use_custom_threshold_waifu else -1
-            )
-            threshold_z3d = custom_threshold_z3d
 
             dte_instance.load_dataset(
                 dir,
@@ -161,11 +77,6 @@ class LoadDatasetUI(UIBase):
                 recursive,
                 load_caption_from_filename,
                 replace_new_line,
-                interrogate_method,
-                use_interrogator_names,
-                threshold_booru,
-                threshold_waifu,
-                threshold_z3d,
                 opts.dataset_editor_use_temp_files,
                 kohya_json_path if use_kohya_metadata else None,
                 opts.dataset_editor_max_res,
@@ -193,13 +104,6 @@ class LoadDatasetUI(UIBase):
                 self.cb_load_recursive,
                 self.cb_load_caption_from_filename,
                 self.cb_replace_new_line_with_comma,
-                self.rb_use_interrogator,
-                self.dd_intterogator_names,
-                self.cb_use_custom_threshold_booru,
-                self.sl_custom_threshold_booru,
-                self.cb_use_custom_threshold_waifu,
-                self.sl_custom_threshold_waifu,
-                self.sl_custom_threshold_z3d,
                 toprow.cb_save_kohya_metadata,
                 toprow.tb_metadata_output,
             ],
